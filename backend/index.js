@@ -10,13 +10,12 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", // Or your frontend domain
+    origin: "*", 
     methods: ["GET", "POST"]
   }
 });
 
 const rooms = new Map();
-
 // Create temp directory if it doesn't exist
 const tempDir = path.join(process.cwd(), 'temp');
 if (!fs.existsSync(tempDir)) {
@@ -206,9 +205,11 @@ const __dirname = path.resolve();
 
 app.use(express.static(path.join(__dirname, "/frontend/dist")));
 
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
-});
+// app.use((req, res) => {
+//   res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
+// });
+
+
 
 server.listen(port, () => {
   console.log(`Server is working on port ${port}`);

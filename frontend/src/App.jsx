@@ -3,14 +3,7 @@ import io from "socket.io-client";
 import Editor from "@monaco-editor/react";
 import "./App.css";
 
-<<<<<<< HEAD
-// const socket = io("https://realtimecodeseditor.onrender.com");
-
-// const socket = io("https://realtimecode-backend.up.railway.app");
-=======
->>>>>>> d61315a (final push)
-const socket = io("https://realtimecodeeditor-production-c891.up.railway.app");
-
+const socket = io("https://realtimecodecompilerbackend-2.onrender.com");
 
 
 const App = () => {
