@@ -41,7 +41,6 @@ With real-time typing indicators, user presence tracking, and language-based syn
 |-------|-------------|
 | Frontend | React.js, HTML5, CSS3 |
 | Backend | Node.js, Express.js |
-| Database | MongoDB |   // Not Now in Future....|
 | Real-Time Communication | Socket.IO |
 | Code Editor | CodeMirror / Monaco Editor |
 | Hosting | Vercel |
