@@ -4,8 +4,8 @@ import Editor from "@monaco-editor/react";
 import ChatBot from "./components/ChatBox.jsx";
 import "./App.css";
 
-// const socket = io("https://realtimecodecompilerbackend-2.onrender.com");
-const socket = io("http://localhost:5000");
+const socket = io("https://realtimecodecompilerbackend-2.onrender.com");
+// const socket = io("http://localhost:5000");
 
 
 
