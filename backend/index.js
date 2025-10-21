@@ -10,20 +10,24 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "*", 
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
 
-const rooms = new Map();
+// --- STATE MANAGEMENT ---
+const rooms = new Map(); // For Code Editor/Compiler room data
+const chatUsers = new Map(); // Dedicated map for Chat user tracking
+
 // Create temp directory if it doesn't exist
 const tempDir = path.join(process.cwd(), 'temp');
 if (!fs.existsSync(tempDir)) {
   fs.mkdirSync(tempDir);
 }
 
-// Code execution function
+// --- UTILITY FUNCTIONS ---
 const executeCode = (code, language, callback) => {
+  // ... (Your original executeCode implementation remains here) ...
   const fileId = uuidv4();
   let fileName, command;
 
@@ -34,16 +38,13 @@ const executeCode = (code, language, callback) => {
         fs.writeFileSync(path.join(tempDir, fileName), code);
         command = `node ${path.join(tempDir, fileName)}`;
         break;
-
       case 'python':
         fileName = `${fileId}.py`;
         fs.writeFileSync(path.join(tempDir, fileName), code);
         command = `python3 ${path.join(tempDir, fileName)}`;
         break;
-
       case 'java':
         fileName = `${fileId}.java`;
-        // Extract class name from code or use default
         const classMatch = code.match(/public\s+class\s+(\w+)/);
         const className = classMatch ? classMatch[1] : 'Main';
         const javaCode = classMatch ? code : `public class Main {\n${code}\n}`;
@@ -51,19 +52,16 @@ const executeCode = (code, language, callback) => {
         fs.writeFileSync(path.join(tempDir, `${className}.java`), javaCode);
         command = `cd ${tempDir} && javac ${className}.java && java ${className}`;
         break;
-
       case 'cpp':
         fileName = `${fileId}.cpp`;
         fs.writeFileSync(path.join(tempDir, fileName), code);
         const executableName = `${fileId}`;
         command = `cd ${tempDir} && g++ ${fileName} -o ${executableName} && ./${executableName}`;
         break;
-
       default:
         return callback({ error: 'Unsupported language' });
     }
 
-    // Execute with timeout
     const childProcess = exec(command, { timeout: 10000 }, (error, stdout, stderr) => {
       // Cleanup files
       try {
@@ -102,22 +100,40 @@ const executeCode = (code, language, callback) => {
   }
 };
 
+function getUsersInRoom(roomId) {
+  const roomUsers = [];
+  for (let [id, user] of chatUsers) {
+    if (user.roomId === roomId) {
+      roomUsers.push(user.username);
+    }
+  }
+  return roomUsers;
+}
+
+
+// --- SINGLE, UNIFIED CONNECTION HANDLER (THE FIX) ---
 io.on("connection", (socket) => {
-  console.log("User Connected", socket.id);
+  console.log("User Connected:", socket.id);
 
-  let currentRoom = null;
-  let currentUser = null;
+  // Context for Code Editor features (Your original variables)
+  let currentCodeRoom = null;
+  let currentCodeUser = null;
 
-  // Handle joining a room
+  // ====================================================================
+  // 1. CODE EDITOR/COMPILER LOGIC
+  // ====================================================================
+
+  // Handle joining a room (for Code Editor/Compiler)
   socket.on("join", ({ roomId, userName }) => {
-    if (currentRoom) {
-      socket.leave(currentRoom);
-      rooms.get(currentRoom).delete(currentUser);
-      io.to(currentRoom).emit("userJoined", Array.from(rooms.get(currentRoom).users));
+    if (currentCodeRoom) {
+      socket.leave(currentCodeRoom);
+      if (rooms.has(currentCodeRoom) && rooms.get(currentCodeRoom).users.has(currentCodeUser)) {
+        rooms.get(currentCodeRoom).users.delete(currentCodeUser);
+      }
     }
 
-    currentRoom = roomId;
-    currentUser = userName;
+    currentCodeRoom = roomId;
+    currentCodeUser = userName;
 
     socket.join(roomId);
 
@@ -163,14 +179,11 @@ io.on("connection", (socket) => {
   // Handle code execution
   socket.on("runCode", ({ roomId, code, language }) => {
     console.log(`Running ${language} code for room ${roomId}`);
-
-    // Notify all users in the room that code is being executed
-    io.to(roomId).emit("codeRunning", { user: currentUser });
+    io.to(roomId).emit("codeRunning", { user: currentCodeUser }); // Using currentCodeUser
 
     executeCode(code, language, (result) => {
-      // Send result to all users in the room
       io.to(roomId).emit("codeResult", {
-        user: currentUser,
+        user: currentCodeUser, // Using currentCodeUser
         output: result.output || '',
         error: result.error || '',
         timestamp: new Date().toLocaleTimeString()
@@ -180,36 +193,84 @@ io.on("connection", (socket) => {
 
   // Handle leaving a room
   socket.on("leaveRoom", () => {
-    if (currentRoom && currentUser) {
-      rooms.get(currentRoom).users.delete(currentUser);
-      io.to(currentRoom).emit("userJoined", Array.from(rooms.get(currentRoom).users));
+    if (currentCodeRoom && currentCodeUser) {
+      if (rooms.has(currentCodeRoom)) {
+        rooms.get(currentCodeRoom).users.delete(currentCodeUser);
+        io.to(currentCodeRoom).emit("userJoined", Array.from(rooms.get(currentCodeRoom).users));
+      }
 
-      socket.leave(currentRoom);
-      currentRoom = null;
-      currentUser = null;
+      socket.leave(currentCodeRoom);
+      currentCodeRoom = null;
+      currentCodeUser = null;
     }
   });
 
-  // Handle disconnection
+
+  // ====================================================================
+  // 2. CHAT BOT LOGIC (Now correctly integrated)
+  // ====================================================================
+
+  // When a user joins the chat
+  socket.on("joinChat", ({ username, roomId }) => {
+    chatUsers.set(socket.id, { username, roomId });
+    socket.join(roomId);
+    console.log(`${username} joined chat room: ${roomId}`);
+
+    io.to(roomId).emit("users", getUsersInRoom(roomId));
+    io.to(roomId).emit("message", {
+      sender: "System",
+      text: `${username} joined the chat`,
+      time: new Date(),
+    });
+  });
+
+  // When a message is sent (The Chat FIX)
+  socket.on("message", (msgData) => {
+    const user = chatUsers.get(socket.id);
+    if (!user) return; // User must have joined chat using 'joinChat'
+
+    const msg = {
+      sender: user.username,
+      text: msgData.text,
+      time: new Date(),
+      roomId: user.roomId,
+    };
+
+    // Correctly broadcast to ALL in the room (including sender)
+    io.to(user.roomId).emit("message", msg);
+  });
+
+  // Handle Disconnection (Merged Cleanup)
   socket.on("disconnect", () => {
-    if (currentRoom && currentUser) {
-      rooms.get(currentRoom).users.delete(currentUser);
-      io.to(currentRoom).emit("userJoined", Array.from(rooms.get(currentRoom).users));
+    // 1. Clean up Chat User
+    const chatUser = chatUsers.get(socket.id);
+    if (chatUser) {
+      const { username, roomId } = chatUser;
+      chatUsers.delete(socket.id);
+
+      io.to(roomId).emit("users", getUsersInRoom(roomId));
+      io.to(roomId).emit("message", {
+        sender: "System",
+        text: `${username} left the chat`,
+        time: new Date(),
+      });
     }
-    console.log("User Disconnected");
+
+    // 2. Clean up Code Editor User
+    if (currentCodeRoom && currentCodeUser && rooms.has(currentCodeRoom)) {
+      rooms.get(currentCodeRoom).users.delete(currentCodeUser);
+      io.to(currentCodeRoom).emit("userJoined", Array.from(rooms.get(currentCodeRoom).users));
+    }
+
+    console.log("User Disconnected:", socket.id);
   });
 });
+
 
 const port = process.env.PORT || 5000;
 const __dirname = path.resolve();
 
 app.use(express.static(path.join(__dirname, "/frontend/dist")));
-
-// app.use((req, res) => {
-//   res.sendFile(path.join(__dirname, "frontend", "dist", "index.html"));
-// });
-
-
 
 server.listen(port, () => {
   console.log(`Server is working on port ${port}`);

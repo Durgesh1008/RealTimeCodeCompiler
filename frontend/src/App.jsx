@@ -1,9 +1,12 @@
 import { useEffect, useState } from "react";
 import io from "socket.io-client";
 import Editor from "@monaco-editor/react";
+import ChatBot from "./components/ChatBox.jsx";
 import "./App.css";
 
-const socket = io("https://realtimecodecompilerbackend-2.onrender.com");
+// const socket = io("https://realtimecodecompilerbackend-2.onrender.com");
+const socket = io("http://localhost:5000");
+
 
 
 const App = () => {
@@ -18,6 +21,12 @@ const App = () => {
   const [output, setOutput] = useState("");
   const [isRunning, setIsRunning] = useState(false);
   const [runningUser, setRunningUser] = useState("");
+
+  const [messages, setMessages] = useState([]);
+  const [chatInput, setChatInput] = useState("");
+  const [activeTab, setActiveTab] = useState("chat"); // "chat" or "ai"
+  const [aiInput, setAiInput] = useState("");
+  const [aiResponse, setAiResponse] = useState("");
 
   // Default code templates for each language
   const defaultCode = {
@@ -191,6 +200,9 @@ int main() {
       result += "\n" + "─".repeat(50);
       setOutput(result);
     });
+    socket.on("message", (msg) => {
+      setMessages((prev) => [...prev, msg]);
+    });
 
     return () => {
       socket.off("userJoined");
@@ -199,6 +211,7 @@ int main() {
       socket.off("languageUpdate");
       socket.off("codeRunning");
       socket.off("codeResult");
+      // socket.off("message");
     };
   }, []);
 
@@ -214,13 +227,40 @@ int main() {
     };
   }, []);
 
+  // App.jsx
+
+  // ... (other code) ...
+
   const joinRoom = () => {
     if (roomId && userName) {
+      
       socket.emit("join", { roomId, userName });
+      socket.emit("joinChat", { username: userName, roomId: roomId });
+
       setJoined(true);
     }
   };
 
+  
+
+ 
+
+  const sendAiQuery = () => {
+    if (!aiInput.trim()) return;
+    setAiResponse("🤖 Thinking...");
+    // just mock response for now
+    setTimeout(() => {
+      setAiResponse(`AI says: "${aiInput}"`);
+      setAiInput("");
+    }, 1000);
+  };
+  const sendMessage = () => {
+    if (chatInput.trim() === "") return;
+    const msg = { sender: userName, text: chatInput };
+    socket.emit("message", msg);
+    setMessages((prev) => [...prev, msg]);
+    setChatInput("");
+  };
   const leaveRoom = () => {
     socket.emit("leaveRoom");
     setJoined(false);
@@ -358,6 +398,7 @@ int main() {
                 🗑️ Clear
               </button>
             </div>
+            
 
             {/* Output Section */}
             <div className="output-section">
@@ -375,6 +416,7 @@ int main() {
             </div>
           </div>
         </div>
+        
 
         <button className="leave-button" onClick={leaveRoom}>
           Leave Room
@@ -415,6 +457,7 @@ int main() {
           }}
         />
       </div>
+      <ChatBot socket={socket} username={userName} roomId={roomId} />
     </div>
   );
 };
