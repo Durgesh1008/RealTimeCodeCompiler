@@ -330,7 +330,7 @@ int main() {
     setAiExplanation("🤖 Analyzing your code..."); 
 
     try {
-      const res = await fetch("http://localhost:5000/ai/fix-code", {
+      const res = await fetch("https://realtimecodecompilerbackend-2.onrender.com/ai/fix-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
