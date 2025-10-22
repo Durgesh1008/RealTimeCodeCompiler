@@ -5,9 +5,14 @@ import path from "path";
 import { exec } from "child_process";
 import fs from "fs";
 import { v4 as uuidv4 } from "uuid";
-
+import { GoogleGenAI } from "@google/genai";
+import cors from "cors";
+import dotenv from "dotenv";
+dotenv.config();
 const app = express();
 const server = http.createServer(app);
+app.use(express.json());
+app.use(cors());
 const io = new Server(server, {
   cors: {
     origin: "*",
@@ -15,6 +20,10 @@ const io = new Server(server, {
   }
 });
 
+
+const ai = new GoogleGenAI({ 
+  apiKey: process.env.GEMINI_API_KEY, 
+});
 // --- STATE MANAGEMENT ---
 const rooms = new Map(); // For Code Editor/Compiler room data
 const chatUsers = new Map(); // Dedicated map for Chat user tracking
@@ -264,6 +273,66 @@ io.on("connection", (socket) => {
 
     console.log("User Disconnected:", socket.id);
   });
+});
+
+app.post("/ai/fix-code", async (req, res) => {
+  const { code, error, language } = req.body;
+
+  // Ensure req.body is printed correctly for debugging
+  console.log("Received AI fix-code request. Body:", req.body);
+
+  try {
+    // Using a system instruction for context and role
+    const systemInstruction = `You are an expert ${language} developer. Your task is to analyze the provided code and error, then provide a clear explanation and the corrected code. You must respond ONLY with a single JSON object.`;
+
+    const userPrompt = `
+Here is some code that produced an error:
+
+--- CODE ---
+${code}
+--- END CODE ---
+
+--- ERROR ---
+${error}
+--- END ERROR ---
+
+Please:
+1️⃣ Explain the cause of the error clearly.
+2️⃣ Provide corrected code.
+Respond in JSON like this:
+{
+  "explanation": "why it happened",
+  "fixedCode": "corrected code"
+}
+`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash", // Fast, powerful, and cost-effective model
+      contents: userPrompt,
+      config: {
+        systemInstruction: systemInstruction,
+        responseMimeType: "application/json", // Instructs the model to return a single JSON object
+      },
+    });
+
+    // The response text is a JSON string because of responseMimeType
+    let reply = response.text;
+    let json;
+
+    try {
+      json = JSON.parse(reply);
+    } catch (e) {
+      console.error("Failed to parse Gemini JSON response:", e);
+      // Fallback in case of parsing failure
+      json = { explanation: reply, fixedCode: "" };
+    }
+
+    res.json(json);
+  } catch (err) {
+    console.error("Gemini API Error:", err.message);
+    // Send specific error details to the frontend
+    res.status(500).json({ error: err.message });
+  }
 });
 
 

@@ -28,6 +28,13 @@ const App = () => {
   const [aiInput, setAiInput] = useState("");
   const [aiResponse, setAiResponse] = useState("");
 
+  const [showAI, setShowAI] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState("");
+  const [aiFixedCode, setAiFixedCode] = useState("");
+  const [lastError, setLastError] = useState("");
+
+
   // Default code templates for each language
   const defaultCode = {
     javascript: `// JavaScript
@@ -199,6 +206,8 @@ int main() {
 
       result += "\n" + "─".repeat(50);
       setOutput(result);
+      setLastError(error || "");
+
     });
     socket.on("message", (msg) => {
       setMessages((prev) => [...prev, msg]);
@@ -313,6 +322,42 @@ int main() {
       joinRoom();
     }
   };
+  // App.jsx - handleAskAI function
+
+  const handleAskAI = async () => {
+    setShowAI(true);
+    setAiLoading(true);
+    setAiExplanation("🤖 Analyzing your code..."); 
+
+    try {
+      const res = await fetch("http://localhost:5000/ai/fix-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code,
+          error: lastError,
+          language,
+        }),
+      });
+
+      // Check for non-OK status before attempting to parse JSON
+      if (!res.ok) {
+        // Read the error message sent by the server
+        const errorData = await res.json();
+        throw new Error(errorData.error || `Server responded with status ${res.status}`);
+      }
+
+      const data = await res.json();
+      setAiExplanation(data.explanation);
+      setAiFixedCode(data.fixedCode);
+    } catch (err) {
+      // Display the specific error message from the backend
+      setAiExplanation(`⚠️ Error connecting to AI service. Detail: ${err.message}`);
+      setAiFixedCode(""); // Clear fixed code on error
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   if (!joined) {
     return (
@@ -414,6 +459,12 @@ int main() {
                 </pre>
               </div>
             </div>
+            {lastError && (
+              <button className="ask-ai-button" onClick={handleAskAI}>
+                💡 Ask AI for Help
+              </button>
+            )}
+
           </div>
         </div>
         
@@ -457,6 +508,44 @@ int main() {
           }}
         />
       </div>
+      {showAI && (
+        <div className="ai-panel">
+          <h2>🤖 AI Assistant</h2>
+
+          {aiLoading ? (
+            <p>Analyzing your code...</p>
+          ) : (
+            <>
+              <h3>Explanation:</h3>
+              <pre>{aiExplanation}</pre>
+
+              {aiFixedCode && (
+                <>
+                  <h3>Fixed Code:</h3>
+                  <Editor
+                    height="300px"
+                    language={language}
+                    value={aiFixedCode}
+                    theme="vs-dark"
+                    options={{ readOnly: true }}
+                  />
+                  <button
+                    onClick={() => setCode(aiFixedCode)}
+                    className="replace-button"
+                  >
+                    Replace My Code
+                  </button>
+                </>
+              )}
+            </>
+          )}
+
+          <button onClick={() => setShowAI(false)} className="close-ai">
+            Close
+          </button>
+        </div>
+      )}
+
       <ChatBot socket={socket} username={userName} roomId={roomId} />
     </div>
   );
