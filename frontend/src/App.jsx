@@ -322,7 +322,7 @@ int main() {
       joinRoom();
     }
   };
-  // App.jsx - handleAskAI function
+ 
 
   const handleAskAI = async () => {
     setShowAI(true);
